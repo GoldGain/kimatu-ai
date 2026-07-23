@@ -1,14 +1,14 @@
 import OpenAI from "openai";
 
 /**
- * DeepSeek exposes an OpenAI-compatible API.
- * Never hardcode keys — read from process.env only.
+ * DeepSeek OpenAI-compatible client.
+ * Secrets must come from process.env only — never hardcode keys.
  */
 export function getDeepSeekClient() {
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) {
     throw new Error(
-      "DEEPSEEK_API_KEY is not set. Add it to .env.local (never commit secrets)."
+      "DEEPSEEK_API_KEY is not set. Add it to .env.local or your host secrets (never commit secrets)."
     );
   }
 
@@ -19,6 +19,8 @@ export function getDeepSeekClient() {
 }
 
 export function getDefaultModel() {
+  // Prefer explicit model. deepseek-chat is the production chat endpoint;
+  // set DEEPSEEK_MODEL=deepseek-reasoner or your V4 Pro model id when available.
   return process.env.DEEPSEEK_MODEL || "deepseek-chat";
 }
 
@@ -37,7 +39,7 @@ export async function completeChat(params: {
     model: getDefaultModel(),
     messages: params.messages,
     temperature: params.temperature ?? 0.4,
-    max_tokens: params.maxTokens ?? 2048,
+    max_tokens: params.maxTokens ?? 4096,
   });
 
   const choice = response.choices[0]?.message?.content ?? "";
@@ -55,7 +57,7 @@ export async function streamChat(params: {
     model: getDefaultModel(),
     messages: params.messages,
     temperature: params.temperature ?? 0.4,
-    max_tokens: params.maxTokens ?? 2048,
+    max_tokens: params.maxTokens ?? 4096,
     stream: true,
   });
 }
