@@ -1,15 +1,26 @@
 import { NextResponse } from "next/server";
-import { isSupabaseConfigured } from "@/lib/db/supabase";
+import {
+  isDeepSeekConfigured,
+  isSupabaseConfigured,
+} from "@/lib/db/supabase";
 
 export const runtime = "nodejs";
 
 export async function GET() {
-  return NextResponse.json({
-    ok: true,
-    service: "kimatu-ai",
-    deepseekConfigured: Boolean(process.env.DEEPSEEK_API_KEY),
-    supabaseConfigured: isSupabaseConfigured(),
-    model: process.env.DEEPSEEK_MODEL || "deepseek-chat",
-    time: new Date().toISOString(),
-  });
+  const deepseek = isDeepSeekConfigured();
+  const supabase = isSupabaseConfigured();
+  const ready = deepseek && supabase;
+
+  return NextResponse.json(
+    {
+      ok: ready,
+      service: "kimatu-ai",
+      mode: "production",
+      deepseekConfigured: deepseek,
+      supabaseConfigured: supabase,
+      model: process.env.DEEPSEEK_MODEL || "deepseek-chat",
+      time: new Date().toISOString(),
+    },
+    { status: ready ? 200 : 503 }
+  );
 }

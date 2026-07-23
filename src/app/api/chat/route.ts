@@ -5,7 +5,9 @@ import {
   addMessage,
   createConversation,
   getConversation,
-} from "@/lib/db/memory-store";
+  recordUsage,
+} from "@/lib/db/repository";
+import { assertProductionConfig } from "@/lib/db/supabase";
 import { pushShortTerm } from "@/lib/memory";
 import type { AgentName } from "@/types";
 
@@ -13,7 +15,7 @@ export const runtime = "nodejs";
 
 const bodySchema = z.object({
   message: z.string().min(1).max(20000),
-  conversationId: z.string().optional(),
+  conversationId: z.string().uuid().optional(),
   agent: z
     .enum([
       "orchestrator",
@@ -30,6 +32,8 @@ const bodySchema = z.object({
 
 export async function POST(req: NextRequest) {
   try {
+    assertProductionConfig();
+
     const json = await req.json();
     const parsed = bodySchema.safeParse(json);
     if (!parsed.success) {
@@ -41,19 +45,23 @@ export async function POST(req: NextRequest) {
 
     const { message, agent, temperature, stream } = parsed.data;
     let conversationId = parsed.data.conversationId;
-    let conversation = conversationId ? getConversation(conversationId) : null;
+    let conversation = conversationId
+      ? await getConversation(conversationId)
+      : null;
     if (!conversation) {
-      conversation = createConversation();
+      conversation = await createConversation();
       conversationId = conversation.id;
     }
 
-    addMessage(conversationId!, {
+    await addMessage(conversationId!, {
       role: "user",
       content: message,
     });
     pushShortTerm(conversationId!, `user: ${message}`);
 
-    const history = conversation.messages
+    // Reload after user message so history is complete
+    conversation = await getConversation(conversationId!);
+    const history = (conversation?.messages || [])
       .filter((m) => m.role === "user" || m.role === "assistant")
       .slice(-12)
       .map((m) => ({
@@ -74,18 +82,26 @@ export async function POST(req: NextRequest) {
               forceAgent: agent,
               temperature,
             })) {
+              if (chunk.type === "error") {
+                controller.enqueue(
+                  encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`)
+                );
+                controller.close();
+                return;
+              }
               if (chunk.agent) usedAgent = chunk.agent;
               if (chunk.type === "token" && chunk.content) full += chunk.content;
               controller.enqueue(
                 encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`)
               );
             }
-            addMessage(conversationId!, {
+            await addMessage(conversationId!, {
               role: "assistant",
               content: full,
               agent: usedAgent,
             });
             pushShortTerm(conversationId!, `assistant: ${full}`);
+            await recordUsage("chat_stream", Math.ceil(full.length / 4));
             controller.enqueue(encoder.encode("data: [DONE]\n\n"));
             controller.close();
           } catch (err) {
@@ -116,15 +132,16 @@ export async function POST(req: NextRequest) {
       temperature,
     });
 
-    addMessage(conversationId!, {
+    await addMessage(conversationId!, {
       role: "assistant",
       content: result.content,
       agent: result.agent,
       tokenUsage: result.usage,
     });
     pushShortTerm(conversationId!, `assistant: ${result.content}`);
+    await recordUsage("chat", result.usage);
 
-    const updated = getConversation(conversationId!);
+    const updated = await getConversation(conversationId!);
     return NextResponse.json({
       conversation: updated,
       agent: result.agent,
@@ -133,6 +150,9 @@ export async function POST(req: NextRequest) {
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Chat failed";
-    return NextResponse.json({ error: msg }, { status: 500 });
+    const status = /DEEPSEEK_API_KEY|Production config|Supabase/.test(msg)
+      ? 503
+      : 500;
+    return NextResponse.json({ error: msg }, { status });
   }
 }
