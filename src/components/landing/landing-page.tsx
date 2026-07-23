@@ -74,8 +74,8 @@ const pricing = [
   {
     name: "Starter",
     price: "Free",
-    detail: "Local MVP & demos",
-    perks: ["Chat workspace", "5 specialist agents", "Demo mode without key", "Project scaffold"],
+    detail: "Bootstrap workspace",
+    perks: ["Chat workspace", "5 specialist agents", "Agent routing + plans", "Project scaffold"],
   },
   {
     name: "Pro",
@@ -349,8 +349,8 @@ export function LandingPage() {
                 Production scaffold, not a toy demo
               </h2>
               <p className="mt-2 max-w-xl text-sm text-zinc-400">
-                Typed Next.js app, agent prompts, connector interfaces, SQL
-                migrations, and secure configuration patterns included.
+                Typed Next.js app, live DeepSeek inference, Supabase persistence,
+                connectors, and secure env-only secrets.
               </p>
             </div>
             <Link href="/signup">
