@@ -6,13 +6,17 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { isSupabaseConfigured } from "@/lib/db/supabase";
+import {
+  isDeepSeekConfigured,
+  isSupabaseConfigured,
+} from "@/lib/db/supabase";
 
 export const dynamic = "force-dynamic";
 
 export default function SettingsPage() {
-  const deepseek = Boolean(process.env.DEEPSEEK_API_KEY);
+  const deepseek = isDeepSeekConfigured();
   const supabase = isSupabaseConfigured();
+  const serviceRole = Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY);
   const github = Boolean(process.env.GITHUB_TOKEN);
   const vercel = Boolean(process.env.VERCEL_TOKEN);
 
@@ -21,25 +25,25 @@ export default function SettingsPage() {
       name: "DeepSeek API",
       env: "DEEPSEEK_API_KEY",
       ok: deepseek,
-      help: "Primary model engine (OpenAI-compatible).",
+      help: "Required. Production chat engine (OpenAI-compatible).",
     },
     {
-      name: "Supabase",
-      env: "NEXT_PUBLIC_SUPABASE_URL + ANON_KEY",
-      ok: supabase,
-      help: "Auth, Postgres, and future RAG storage.",
+      name: "Supabase URL + keys",
+      env: "NEXT_PUBLIC_SUPABASE_URL + ANON + SERVICE_ROLE",
+      ok: supabase && serviceRole,
+      help: "Required. Service role is server-only for API writes.",
     },
     {
-      name: "GitHub",
+      name: "GitHub connector",
       env: "GITHUB_TOKEN",
       ok: github,
-      help: "Fine-scoped PAT only — never commit tokens.",
+      help: "Optional fine-scoped PAT — never commit tokens.",
     },
     {
-      name: "Vercel",
+      name: "Vercel connector",
       env: "VERCEL_TOKEN",
       ok: vercel,
-      help: "Optional deploy connector.",
+      help: "Optional deploy connector token.",
     },
   ];
 
@@ -47,10 +51,10 @@ export default function SettingsPage() {
     <div className="mx-auto max-w-3xl space-y-6">
       <div>
         <Badge className="mb-2">Settings</Badge>
-        <h1 className="text-2xl font-semibold text-white">Configuration</h1>
+        <h1 className="text-2xl font-semibold text-white">Production configuration</h1>
         <p className="text-sm text-zinc-400">
-          Secrets are read from environment variables only. Do not paste API keys
-          into chat or source control.
+          No demo mode. Missing required secrets return hard errors until configured.
+          Secrets live only in environment variables.
         </p>
       </div>
 
@@ -58,9 +62,8 @@ export default function SettingsPage() {
         <CardHeader>
           <CardTitle>Environment status</CardTitle>
           <CardDescription>
-            Copy <code className="text-cyan-300">.env.example</code> to{" "}
-            <code className="text-cyan-300">.env.local</code> and fill values
-            locally or in Vercel project settings.
+            Set values in <code className="text-cyan-300">.env.local</code> or
+            your host (Vercel) project settings. Never paste keys into source.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -80,10 +83,10 @@ export default function SettingsPage() {
                 className={
                   r.ok
                     ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-200"
-                    : "border-amber-400/20 bg-amber-400/10 text-amber-100"
+                    : "border-rose-400/20 bg-rose-400/10 text-rose-100"
                 }
               >
-                {r.ok ? "Configured" : "Missing"}
+                {r.ok ? "Configured" : "Required / missing"}
               </Badge>
             </div>
           ))}
@@ -92,10 +95,30 @@ export default function SettingsPage() {
 
       <Card>
         <CardHeader>
+          <CardTitle>Supabase SQL</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm text-zinc-400">
+          <p>
+            1. Open Supabase → SQL → New query.
+          </p>
+          <p>
+            2. Paste and run <code className="text-cyan-300">supabase/migrations/001_init.sql</code>.
+          </p>
+          <p>
+            3. Confirm tables: conversations, messages, projects, files, plugins, usage_tracking.
+          </p>
+          <p>
+            4. Keep the service role key server-side only.
+          </p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>Security checklist</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2 text-sm text-zinc-400">
-          <p>1. Rotate any key that was pasted into chat or committed.</p>
+          <p>1. Rotate any key that was ever pasted into chat.</p>
           <p>2. Store secrets only in `.env.local` / host env panels.</p>
           <p>3. Prefer fine-scoped GitHub PATs with short expiry.</p>
           <p>4. Never ship `SUPABASE_SERVICE_ROLE_KEY` to the browser.</p>

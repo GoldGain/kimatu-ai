@@ -11,16 +11,33 @@ import {
   listConversations,
   listPlugins,
   listProjects,
-} from "@/lib/db/memory-store";
-import { isSupabaseConfigured } from "@/lib/db/supabase";
+} from "@/lib/db/repository";
+import {
+  isDeepSeekConfigured,
+  isSupabaseConfigured,
+} from "@/lib/db/supabase";
 
 export const dynamic = "force-dynamic";
 
-export default function AdminPage() {
-  const usage = getUsageStats();
-  const conversations = listConversations();
-  const projects = listProjects();
-  const plugins = listPlugins();
+export default async function AdminPage() {
+  const supabaseOk = isSupabaseConfigured();
+  const deepseekOk = isDeepSeekConfigured();
+
+  if (!supabaseOk) {
+    return (
+      <div className="mx-auto max-w-2xl rounded-2xl border border-amber-400/30 bg-amber-500/10 p-6 text-amber-50">
+        <h1 className="text-xl font-semibold">Admin unavailable</h1>
+        <p className="mt-2 text-sm">Configure Supabase production credentials first.</p>
+      </div>
+    );
+  }
+
+  const [usage, conversations, projects, plugins] = await Promise.all([
+    getUsageStats(),
+    listConversations(),
+    listProjects(),
+    listPlugins(),
+  ]);
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
@@ -28,7 +45,7 @@ export default function AdminPage() {
         <Badge className="mb-2">Admin</Badge>
         <h1 className="text-2xl font-semibold text-white">System overview</h1>
         <p className="text-sm text-zinc-400">
-          Local MVP metrics. Wire Supabase RLS + auth for multi-tenant admin.
+          Live metrics from Supabase. DeepSeek is required for chat inference.
         </p>
       </div>
 
@@ -68,17 +85,19 @@ export default function AdminPage() {
           <CardContent className="space-y-2 text-sm text-zinc-300">
             <div className="flex justify-between">
               <span>DeepSeek</span>
-              <span>
-                {process.env.DEEPSEEK_API_KEY ? "configured" : "demo mode"}
-              </span>
+              <span>{deepseekOk ? "live" : "missing key"}</span>
             </div>
             <div className="flex justify-between">
               <span>Supabase</span>
-              <span>{isSupabaseConfigured() ? "configured" : "not set"}</span>
+              <span>{supabaseOk ? "connected" : "not set"}</span>
             </div>
             <div className="flex justify-between">
               <span>Model</span>
               <span>{process.env.DEEPSEEK_MODEL || "deepseek-chat"}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Mode</span>
+              <span>production</span>
             </div>
           </CardContent>
         </Card>

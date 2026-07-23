@@ -7,13 +7,22 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { listPlugins } from "@/lib/db/memory-store";
+import { listPlugins } from "@/lib/db/repository";
 import { connectors } from "@/lib/connectors";
+import { isSupabaseConfigured } from "@/lib/db/supabase";
 
 export const dynamic = "force-dynamic";
 
-export default function PluginsPage() {
-  const plugins = listPlugins();
+export default async function PluginsPage() {
+  if (!isSupabaseConfigured()) {
+    return (
+      <div className="mx-auto max-w-2xl rounded-2xl border border-amber-400/30 bg-amber-500/10 p-6 text-amber-50">
+        Configure Supabase to load the plugin registry.
+      </div>
+    );
+  }
+
+  const plugins = await listPlugins();
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">

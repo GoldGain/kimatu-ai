@@ -15,14 +15,38 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { getUsageStats, listConversations, listPlugins } from "@/lib/db/memory-store";
+import {
+  getUsageStats,
+  listConversations,
+  listPlugins,
+} from "@/lib/db/repository";
+import { isSupabaseConfigured } from "@/lib/db/supabase";
 
 export const dynamic = "force-dynamic";
 
-export default function DashboardPage() {
-  const usage = getUsageStats();
-  const recent = listConversations().slice(0, 5);
-  const plugins = listPlugins().filter((p) => p.enabled).length;
+export default async function DashboardPage() {
+  if (!isSupabaseConfigured()) {
+    return (
+      <div className="mx-auto max-w-2xl rounded-2xl border border-amber-400/30 bg-amber-500/10 p-6 text-amber-50">
+        <h1 className="text-xl font-semibold">Supabase required</h1>
+        <p className="mt-2 text-sm text-amber-100/80">
+          Configure NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, and
+          SUPABASE_SERVICE_ROLE_KEY, then run supabase/migrations/001_init.sql.
+        </p>
+        <Link href="/settings" className="mt-4 inline-block text-sm underline">
+          Open settings
+        </Link>
+      </div>
+    );
+  }
+
+  const [usage, conversations, plugins] = await Promise.all([
+    getUsageStats(),
+    listConversations(),
+    listPlugins(),
+  ]);
+  const recent = conversations.slice(0, 5);
+  const pluginsOn = plugins.filter((p) => p.enabled).length;
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -33,7 +57,7 @@ export default function DashboardPage() {
             Welcome to Kimatu AI
           </h1>
           <p className="mt-1 text-sm text-zinc-400">
-            Orchestrate agents, ship code, and connect tools from one dashboard.
+            Production multi-agent workspace powered by DeepSeek + Supabase.
           </p>
         </div>
         <div className="flex gap-2">
@@ -59,7 +83,7 @@ export default function DashboardPage() {
           },
           { label: "Messages", value: usage.messages, icon: Sparkles },
           { label: "Tokens used", value: usage.tokensUsed, icon: Rocket },
-          { label: "Plugins on", value: plugins, icon: Puzzle },
+          { label: "Plugins on", value: pluginsOn, icon: Puzzle },
         ].map((stat) => (
           <Card key={stat.label}>
             <CardHeader className="pb-1">
@@ -77,7 +101,7 @@ export default function DashboardPage() {
         <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle>Recent conversations</CardTitle>
-            <CardDescription>Pick up where you left off</CardDescription>
+            <CardDescription>Persisted in Supabase</CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
             {!recent.length && (
@@ -110,7 +134,7 @@ export default function DashboardPage() {
               { href: "/chat", label: "Plan a product roadmap" },
               { href: "/code", label: "Open code workspace" },
               { href: "/plugins", label: "Configure connectors" },
-              { href: "/settings", label: "Add API keys securely" },
+              { href: "/settings", label: "Review production config" },
             ].map((a) => (
               <Link key={a.href + a.label} href={a.href}>
                 <div className="rounded-xl border border-white/10 px-3 py-2.5 text-sm text-zinc-300 transition hover:border-cyan-400/30 hover:bg-cyan-500/5">
