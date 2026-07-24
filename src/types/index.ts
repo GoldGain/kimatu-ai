@@ -22,6 +22,7 @@ export interface Conversation {
   title: string;
   model: string;
   messages: ChatMessage[];
+  messageCount?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -48,6 +49,7 @@ export interface Plugin {
   enabled: boolean;
   category: string;
   icon: string;
+  dbId?: string;
 }
 
 export interface AgentPlanStep {

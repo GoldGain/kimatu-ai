@@ -8,8 +8,9 @@ import type {
   UsageStats,
 } from "@/types";
 
-const DEFAULT_PLUGINS: Omit<Plugin, "id">[] = [
+const DEFAULT_PLUGINS: Plugin[] = [
   {
+    id: "github",
     name: "GitHub Connector",
     description: "Connect repositories for code management and PRs.",
     enabled: true,
@@ -17,6 +18,7 @@ const DEFAULT_PLUGINS: Omit<Plugin, "id">[] = [
     icon: "github",
   },
   {
+    id: "supabase",
     name: "Supabase Connector",
     description: "Query and manage Supabase Postgres data securely.",
     enabled: true,
@@ -24,6 +26,7 @@ const DEFAULT_PLUGINS: Omit<Plugin, "id">[] = [
     icon: "database",
   },
   {
+    id: "vercel",
     name: "Vercel Connector",
     description: "Deploy previews and production apps to Vercel.",
     enabled: true,
@@ -31,6 +34,7 @@ const DEFAULT_PLUGINS: Omit<Plugin, "id">[] = [
     icon: "rocket",
   },
   {
+    id: "browser",
     name: "Browser Automation",
     description: "Automate browsing for research and UI checks.",
     enabled: false,
@@ -38,6 +42,7 @@ const DEFAULT_PLUGINS: Omit<Plugin, "id">[] = [
     icon: "globe",
   },
   {
+    id: "filesystem",
     name: "File System",
     description: "Manage project files inside the workspace.",
     enabled: true,
@@ -45,6 +50,7 @@ const DEFAULT_PLUGINS: Omit<Plugin, "id">[] = [
     icon: "folder",
   },
   {
+    id: "pdf",
     name: "PDF Analyzer",
     description: "Extract and analyze PDF document content.",
     enabled: true,
@@ -66,13 +72,23 @@ function mapMessage(row: Record<string, unknown>): ChatMessage {
 
 function mapConversation(
   row: Record<string, unknown>,
-  messages: ChatMessage[] = []
+  messages: ChatMessage[] = [],
+  messageCount?: number
 ): Conversation {
+  const count =
+    typeof messageCount === "number"
+      ? messageCount
+      : Array.isArray(row.message_count)
+        ? Number((row.message_count as { count?: number }[])[0]?.count || 0)
+        : typeof row.message_count === "number"
+          ? Number(row.message_count)
+          : messages.length;
   return {
     id: String(row.id),
     title: String(row.title || "New Conversation"),
     model: String(row.model || process.env.DEEPSEEK_MODEL || "deepseek-chat"),
     messages,
+    messageCount: count,
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
   };
@@ -94,33 +110,62 @@ function mapProject(
 
 function mapPlugin(row: Record<string, unknown>): Plugin {
   const name = String(row.name || "");
-  const slug = name.toLowerCase();
-  let id = String(row.id);
-  if (slug.includes("github")) id = "github";
-  else if (slug.includes("supabase")) id = "supabase";
-  else if (slug.includes("vercel")) id = "vercel";
-  else if (slug.includes("browser")) id = "browser";
-  else if (slug.includes("file")) id = "filesystem";
-  else if (slug.includes("pdf")) id = "pdf";
+  const config = (row.config as { category?: string; icon?: string; slug?: string } | null) || {};
+  const slugHint = String(config.slug || name).toLowerCase();
+  let id = String(config.slug || "");
+  if (!id) {
+    if (slugHint.includes("github")) id = "github";
+    else if (slugHint.includes("supabase")) id = "supabase";
+    else if (slugHint.includes("vercel")) id = "vercel";
+    else if (slugHint.includes("browser")) id = "browser";
+    else if (slugHint.includes("file")) id = "filesystem";
+    else if (slugHint.includes("pdf")) id = "pdf";
+    else id = String(row.id);
+  }
 
   return {
     id,
     name,
     description: String(row.description || ""),
     enabled: Boolean(row.enabled),
-    category: String((row.config as { category?: string } | null)?.category || "General"),
-    icon: String((row.config as { icon?: string } | null)?.icon || "puzzle"),
-  };
+    category: String(config.category || "General"),
+    icon: String(config.icon || "puzzle"),
+    dbId: String(row.id),
+  } as Plugin;
 }
 
 export async function listConversations(): Promise<Conversation[]> {
   const sb = getSupabaseServerClient();
+  // Include message counts so chat history rail is useful without loading every thread.
   const { data, error } = await sb
     .from("conversations")
-    .select("*")
+    .select("*, messages(count)")
     .order("updated_at", { ascending: false });
-  if (error) throw new Error(error.message);
-  return (data || []).map((row) => mapConversation(row));
+  if (error) {
+    // Fallback if relationship aggregate is unavailable
+    const fallback = await sb
+      .from("conversations")
+      .select("*")
+      .order("updated_at", { ascending: false });
+    if (fallback.error) throw new Error(fallback.error.message || error.message);
+    const rows = fallback.data || [];
+    const withCounts: Conversation[] = [];
+    for (const row of rows) {
+      const { count } = await sb
+        .from("messages")
+        .select("*", { count: "exact", head: true })
+        .eq("conversation_id", row.id);
+      withCounts.push(mapConversation(row, [], count || 0));
+    }
+    return withCounts;
+  }
+  return (data || []).map((row) => {
+    const nested = (row as { messages?: { count?: number }[] | number }).messages;
+    let count = 0;
+    if (Array.isArray(nested)) count = Number(nested[0]?.count || 0);
+    else if (typeof nested === "number") count = nested;
+    return mapConversation(row as Record<string, unknown>, [], count);
+  });
 }
 
 export async function getConversation(id: string): Promise<Conversation | null> {
@@ -177,19 +222,19 @@ export async function addMessage(
     .single();
   if (error) throw new Error(error.message);
 
+  // Always bump updated_at; set title from first user message when still default.
+  const patch: Record<string, string> = { updated_at: new Date().toISOString() };
   if (message.role === "user") {
-    const title = message.content.slice(0, 48) || "New Conversation";
-    await sb
+    const { data: conv } = await sb
       .from("conversations")
-      .update({ title, updated_at: new Date().toISOString() })
+      .select("title")
       .eq("id", conversationId)
-      .eq("title", "New Conversation");
-  } else {
-    await sb
-      .from("conversations")
-      .update({ updated_at: new Date().toISOString() })
-      .eq("id", conversationId);
+      .maybeSingle();
+    if (!conv?.title || conv.title === "New Conversation") {
+      patch.title = message.content.slice(0, 64) || "New Conversation";
+    }
   }
+  await sb.from("conversations").update(patch).eq("id", conversationId);
 
   return mapMessage(data);
 }
@@ -324,7 +369,7 @@ export async function listPlugins(): Promise<Plugin[]> {
       name: p.name,
       description: p.description,
       enabled: p.enabled,
-      config: { category: p.category, icon: p.icon },
+      config: { category: p.category, icon: p.icon, slug: p.id },
     }));
     const { data: inserted, error: seedErr } = await sb
       .from("plugins")
@@ -338,15 +383,14 @@ export async function listPlugins(): Promise<Plugin[]> {
 
 export async function togglePlugin(id: string, enabled: boolean) {
   const plugins = await listPlugins();
-  const plugin = plugins.find((p) => p.id === id);
+  const plugin = plugins.find((p) => p.id === id || (p as Plugin & { dbId?: string }).dbId === id);
   if (!plugin) return null;
   const sb = getSupabaseServerClient();
-  const { data, error } = await sb
-    .from("plugins")
-    .update({ enabled })
-    .eq("name", plugin.name)
-    .select("*")
-    .maybeSingle();
+  const dbId = (plugin as Plugin & { dbId?: string }).dbId;
+  let query = sb.from("plugins").update({ enabled }).select("*");
+  if (dbId) query = query.eq("id", dbId);
+  else query = query.eq("name", plugin.name);
+  const { data, error } = await query.maybeSingle();
   if (error) throw new Error(error.message);
   return data ? mapPlugin(data) : null;
 }
