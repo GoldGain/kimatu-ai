@@ -64,19 +64,22 @@ export function ChatWorkspace({
 
   async function refreshHistory() {
     try {
-      const res = await fetch("/api/conversations");
-      if (!res.ok) return;
-      const data = await res.json();
+      const res = await fetch("/api/conversations", { cache: "no-store" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error || "Could not load chat history");
+        return;
+      }
       setHistory(data.conversations || []);
-    } catch {
-      /* ignore */
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not load chat history");
     }
   }
 
   async function loadOrCreate(id?: string) {
     setError(null);
     if (id) {
-      const res = await fetch(`/api/conversations/${id}`);
+      const res = await fetch(`/api/conversations/${id}`, { cache: "no-store" });
       if (res.ok) {
         const data = await res.json();
         setConversation(data.conversation);
@@ -88,10 +91,12 @@ export function ChatWorkspace({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ title: "New Conversation" }),
+      cache: "no-store",
     });
     const data = await res.json();
     if (!res.ok) {
       setError(data.error || "Failed to create conversation");
+      await refreshHistory();
       return;
     }
     setConversation(data.conversation);
@@ -170,6 +175,23 @@ export function ChatWorkspace({
     }
   }
 
+  function onAttach() {
+    setError(null);
+    setInput((v) =>
+      v
+        ? v
+        : "Please analyze the attached document once upload is enabled. For now, paste text or code here."
+    );
+    taRef.current?.focus();
+  }
+
+  async function onNewChat() {
+    setConversation(null);
+    setInput("");
+    setError(null);
+    await loadOrCreate();
+  }
+
   const empty = !conversation?.messages?.length;
 
   return (
@@ -185,7 +207,7 @@ export function ChatWorkspace({
             size="icon"
             variant="secondary"
             className="h-8 w-8"
-            onClick={() => loadOrCreate()}
+            onClick={() => onNewChat()}
             title="New chat"
           >
             <MessageSquarePlus className="h-4 w-4" />
@@ -207,7 +229,10 @@ export function ChatWorkspace({
               >
                 <div className="truncate font-medium">{c.title}</div>
                 <div className="mt-0.5 text-[11px] text-zinc-600">
-                  {c.messages?.length || 0} messages
+                  {typeof c.messageCount === "number"
+                    ? c.messageCount
+                    : c.messages?.length || 0}{" "}
+                  messages
                 </div>
               </Link>
             );
@@ -383,10 +408,22 @@ export function ChatWorkspace({
               />
               <div className="flex items-center justify-between gap-2 px-1 pb-1 pt-1">
                 <div className="flex items-center gap-1">
-                  <Button variant="ghost" size="icon" className="h-9 w-9" title="Attach">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-9 w-9"
+                    title="Attach"
+                    onClick={onAttach}
+                  >
                     <Paperclip className="h-4 w-4" />
                   </Button>
-                  <Button variant="ghost" size="icon" className="h-9 w-9" title="More">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-9 w-9"
+                    title="Refresh history"
+                    onClick={() => refreshHistory()}
+                  >
                     <MoreHorizontal className="h-4 w-4" />
                   </Button>
                   <span className="hidden text-[11px] text-zinc-600 sm:inline">
