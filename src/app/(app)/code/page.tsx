@@ -67,11 +67,34 @@ export default function CodeWorkspacePage() {
     setActiveId(data.project.id);
   }
 
+  async function saveFile() {
+    if (!active) return;
+    setTerminal((t) => [...t, `$ save ${filePath}`]);
+    try {
+      const res = await fetch(`/api/projects/${active.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: filePath, content }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Save failed");
+      setProjects((prev) =>
+        prev.map((p) => (p.id === data.project.id ? data.project : p))
+      );
+      setTerminal((t) => [...t, `Saved ${filePath} to Supabase.`]);
+    } catch (e) {
+      setTerminal((t) => [
+        ...t,
+        `Save failed: ${e instanceof Error ? e.message : "unknown error"}`,
+      ]);
+    }
+  }
+
   function runPreview() {
     setTerminal((t) => [
       ...t,
       `$ kimatu run ${filePath}`,
-      "Preview sandbox is local-only in this MVP (no remote exec).",
+      "Local preview only — use Save to persist files to Supabase.",
       content.slice(0, 120).replace(/\n/g, " ") + (content.length > 120 ? "…" : ""),
     ]);
   }
@@ -146,9 +169,14 @@ export default function CodeWorkspacePage() {
             </h1>
             <p className="text-sm text-zinc-500">{filePath}</p>
           </div>
-          <Button onClick={runPreview} disabled={!active}>
-            <Play className="h-4 w-4" /> Run preview
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={saveFile} disabled={!active}>
+              Save file
+            </Button>
+            <Button onClick={runPreview} disabled={!active}>
+              <Play className="h-4 w-4" /> Run preview
+            </Button>
+          </div>
         </div>
 
         <Card>

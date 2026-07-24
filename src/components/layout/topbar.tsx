@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   Bell,
   ChevronRight,
@@ -26,10 +26,23 @@ const titles: Record<string, string> = {
 
 export function Topbar() {
   const pathname = usePathname();
+  const router = useRouter();
   const toggleSidebar = useAppStore((s) => s.toggleSidebar);
   const setSidebarOpen = useAppStore((s) => s.setSidebarOpen);
   const base = "/" + (pathname.split("/")[1] || "dashboard");
   const title = titles[base] || "Workspace";
+
+  function onSearchClick() {
+    const q = window.prompt("Search chats or go to a page (chat, code, projects, plugins, settings):");
+    if (!q) return;
+    const value = q.trim().toLowerCase();
+    const routes = ["dashboard", "chat", "code", "projects", "plugins", "settings", "admin"];
+    if (routes.includes(value)) {
+      router.push(`/${value}`);
+      return;
+    }
+    router.push(`/chat?q=${encodeURIComponent(q.trim())}`);
+  }
 
   return (
     <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-white/[0.07] bg-[#0b0c0f]/85 px-3 backdrop-blur-xl md:px-5">
@@ -62,13 +75,17 @@ export function Topbar() {
       </div>
 
       <div className="hidden max-w-md flex-1 items-center md:flex">
-        <div className="flex w-full items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-zinc-500">
+        <button
+          type="button"
+          onClick={onSearchClick}
+          className="flex w-full items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-left text-sm text-zinc-500 transition hover:bg-white/[0.05]"
+        >
           <Search className="h-4 w-4" />
           <span>Search chats, projects, plugins…</span>
           <kbd className="ml-auto rounded border border-white/10 px-1.5 py-0.5 text-[10px] text-zinc-500">
             ⌘K
           </kbd>
-        </div>
+        </button>
       </div>
 
       <div className="flex items-center gap-1.5">
